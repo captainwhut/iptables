@@ -1,0 +1,20 @@
+root@LEDE:/etc/config# iptables -t mangle -L
+Chain PREROUTING (policy ACCEPT)
+target     prot opt source               destination
+MARK       tcp  --  anywhere             anywhere             tcp spt:8002 MARK set 0xb
+RETURN     tcp  --  anywhere             anywhere             tcp spt:8002
+MARK       tcp  --  anywhere             anywhere             tcp spt:8001 MARK set 0xc
+RETURN     tcp  --  anywhere             anywhere             tcp spt:8001
+
+Chain INPUT (policy ACCEPT)
+target     prot opt source               destination
+
+Chain FORWARD (policy ACCEPT)
+target     prot opt source               destination
+TCPMSS     tcp  --  anywhere             anywhere             tcp flags:SYN,RST/SYN /* !fw3: wan (mtu_fix) */ TCPMSS clamp to PMTU
+
+Chain OUTPUT (policy ACCEPT)
+target     prot opt source               destination
+
+Chain POSTROUTING (policy ACCEPT)
+target     prot opt source               destination

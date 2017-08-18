@@ -1,0 +1,66 @@
+# This file is interpreted as shell script.
+# Put your custom iptables rules here, they will
+# be executed with each firewall (re-)start.
+
+# Internal uci firewall chains are flushed and recreated on reload, so
+# put custom rules into the root chains e.g. INPUT or FORWARD or into the
+# special user chains, e.g. input_wan_rule or postrouting_lan_rule.
+
+DOWNLINK=4000
+CONTROLORDER=160
+
+STATUS=160
+VEDIO=8000
+UPLINK=8000+160
+
+
+TCA="tc class add dev wlan0"
+TFA="tc filter add dev wlan0"
+tc qdisc del dev wlan0 root
+tc qdisc add dev wlan0 root handle 1: htb
+tc class add dev wlan0 parent 1: classid 1:1 htb rate 16320kbit            #这个16320是上行总速度
+$TCA parent 1:1 classid 1:11 htb rate 8000kbit ceil 16000kbit prio 3     #这个是11号通道,优先级为3
+$TCA parent 1:1 classid 1:12 htb rate 160kbit ceil 320kbit prio 2   #12号通道,优先级为2
+
+$TFA parent 1:0 prio 3 protocol ip handle 11 fw flowid 1:11             
+$TFA parent 1:0 prio 2 protocol ip handle 12 fw flowid 1:12
+
+
+tc qdisc add dev wlan0 ingress
+
+$TFA parent ffff: protocol ip prio 5 handle 25 fw police rate 800kbit mtu 12k burst 10k drop      #这是我自己使用的35号上行通道,最大速度800
+$TFA parent ffff: protocol ip prio 6 handle 26 fw police rate 80kbit mtu 12k burst 10k drop         #这是给大伙使用的50号上行通道,最大速度80
+
+TCAB="tc class add dev eth0"
+TFAB="tc filter add dev eth0"
+tc qdisc del dev eth0 root
+tc qdisc add dev eth0 root handle 2:0 htb
+tc class add dev eth0 parent 2:0 classid 2:1 htb rate 16320kbit            
+$TCAB parent 2:1 classid 2:13 htb rate 160kbit ceil 320kbit prio 1   #13号通道,优先级为1
+
+$TFAB parent 2:0 prio 1 protocol ip handle 13 fw flowid 2:13
+
+
+tc qdisc add dev eth0 ingress
+
+$TFAB parent ffff: protocol ip prio 2 handle 21 fw police rate 800kbit mtu 12k burst 10k drop      #这是21
+#好了,现在用iptables来觉得哪些人走哪些通道吧,哈哈,由于dd wrt的iptables不支持ip range,所以只能每个IP写一条语句,否则命令无效
+
+
+#其他的我就不写了,大家自己换IP吧,想让谁走哪个通道,就把IP改了执行,现在发发慈悲,让大家开网页的时候走我使用25和35号通道吧,当然你也可以不发慈悲
+
+iptables -t mangle -A PREROUTING -p tcp -m tcp --dport 8000 -j MARK --set-mark 21    #控制指令ACK
+iptables -t mangle -A PREROUTING -p tcp -m tcp --dport 8000 -j RETURN
+iptables -t mangle -A POSTROUTING -p tcp -m tcp --sport 8000 -j MARK --set-mark 13   #控制指令过去hiwifi->letv
+iptables -t mangle -A POSTROUTING -p tcp -m tcp --sport 8000 -j RETURN
+
+iptables -t mangle -A PREROUTING -p tcp -m tcp --dport 8001 -j MARK --set-mark 25    #http的端口号80,所以dport是80,这是发起http请求的时候
+iptables -t mangle -A PREROUTING -p tcp -m tcp --dport 8001 -j RETURN
+iptables -t mangle -A POSTROUTING -p tcp -m tcp --sport 8001 -j MARK --set-mark 12   #http的端口号80,所以sport是80,这是http响应回来的时候
+iptables -t mangle -A POSTROUTING -p tcp -m tcp --sport 8001 -j RETURN
+
+iptables -t mangle -A PREROUTING -p tcp -m tcp --dport 8002 -j MARK --set-mark 26    #http的端口号80,所以dport是80,这是发起http请求的时候
+iptables -t mangle -A PREROUTING -p tcp -m tcp --dport 8002 -j RETURN
+iptables -t mangle -A POSTROUTING -p tcp -m tcp --sport 8002 -j MARK --set-mark 11   #http的端口号80,所以sport是80,这是http响应回来的时候
+iptables -t mangle -A POSTROUTING -p tcp -m tcp --sport 8002 -j RETURN
+
